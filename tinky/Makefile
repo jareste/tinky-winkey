@@ -1,55 +1,34 @@
 NAME = tinky
 
-#########
-RM = rm -rf
-CC = cc
-CFLAGS = -Werror -Wextra -Wall
-LDFLAGS = -lm
-RELEASE_CFLAGS = $(CFLAGS) -DNDEBUG
-#########
-
-#########
-FILES = main 
-
-SRC = $(addsuffix .c, $(FILES))
-
-vpath %.c srcs inc srcs/parse_arg srcs/nmap 
-#########
-
-#########
+SRC = srcs/tinky.c
 OBJ_DIR = objs
-OBJ = $(addprefix $(OBJ_DIR)/, $(SRC:.c=.o))
-DEP = $(addsuffix .d, $(basename $(OBJ)))
-#########
+OBJ = $(OBJ_DIR)\tinky.obj
+INC_DIR = inc
 
-#########
-$(OBJ_DIR)/%.o: %.c
-	@mkdir -p $(@D)
-	${CC} -MMD $(CFLAGS) -c -Iinc  $< -o $@
+# Compiler and flags
+CC = cl
+CFLAGS = /Wall /wd4668 /I$(INC_DIR) /D_WIN32_WINNT=0x0A00
+LDFLAGS = Advapi32.lib Userenv.lib /link
 
-all: 
-	$(MAKE) $(NAME)
+# Targets
+all: $(NAME)
 
-$(NAME): $(OBJ) Makefile
-	$(CC) $(CFLAGS) $(OBJ) -o $(NAME) $(LDFLAGS)
-	@echo "EVERYTHING DONE  "
-#	@./.add_path.sh
+$(OBJ_DIR)\tinky.obj: $(SRC)
+    if not exist $(OBJ_DIR) mkdir $(OBJ_DIR)
+    $(CC) $(CFLAGS) /c $(SRC) /Fo$(OBJ)
 
-release: CFLAGS = $(RELEASE_CFLAGS)
-release: re
-	@echo "RELEASE BUILD DONE  "
+$(NAME): $(OBJ)
+    $(CC) $(OBJ) $(LDFLAGS) /OUT:$(NAME).exe
+    @echo "Build completed successfully."
 
 clean:
-	$(RM) $(OBJ) $(DEP)
-	$(RM) -r $(OBJ_DIR)
-	@echo "OBJECTS REMOVED   "
+    if exist $(OBJ_DIR) rd /s /q $(OBJ_DIR)
+    @echo "Clean completed."
 
 fclean: clean
-	$(RM) $(NAME)
-	@echo "EVERYTHING REMOVED   "
+    if exist $(NAME).exe del $(NAME).exe
+    @echo "Fclean completed."
 
-re:	fclean all
+re: fclean all
 
-.PHONY: all clean fclean re release
-
--include $(DEP)
+.PHONY: all clean fclean re

