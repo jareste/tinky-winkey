@@ -1,4 +1,4 @@
-NAME = tinky
+NAME = svc
 
 SRC = srcs/tinky.c
 OBJ_DIR = objs

