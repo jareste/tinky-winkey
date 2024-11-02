@@ -19,4 +19,11 @@ if %errorlevel% neq 0 (
 )
 cd ..
 
+cd tinky
+echo Installing tinky service...
+svc.exe install
+timeout /t 1 /nobreak
+echo Starting tinky service...
+svc.exe start
+
 echo Build completed for both tinky and winkey.
