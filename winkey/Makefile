@@ -7,8 +7,8 @@ INC_DIR = inc
 
 # Compiler and flags
 CC = cl
-CFLAGS = /Wall /wd4668 /I$(INC_DIR) /D_WIN32_WINNT=0x0A00
-LDFLAGS = User32.lib Kernel32.lib  Shell32.lib Ole32.lib Advapi32.lib /link
+CFLAGS = /Qspectre /Wall /wd4668 /I$(INC_DIR) /D_WIN32_WINNT=0x0A00
+LDFLAGS = User32.lib Kernel32.lib  Shell32.lib Ole32.lib Advapi32.lib Psapi.lib /link
 
 # Targets
 all: $(NAME)
