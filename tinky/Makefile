@@ -11,13 +11,13 @@ CFLAGS = /Wall /wd4668 /I$(INC_DIR) /D_WIN32_WINNT=0x0A00
 LDFLAGS = Advapi32.lib Userenv.lib Shell32.lib /link
 
 # Targets
-all: $(NAME)
+all: $(NAME).exe
 
 $(OBJ_DIR)\tinky.obj: $(SRC)
     if not exist $(OBJ_DIR) mkdir $(OBJ_DIR)
     $(CC) $(CFLAGS) /c $(SRC) /Fo$(OBJ)
 
-$(NAME): $(OBJ)
+$(NAME).exe: $(OBJ)
     $(CC) $(OBJ) $(LDFLAGS) /OUT:$(NAME).exe
     @echo "Build completed successfully."
 

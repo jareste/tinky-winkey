@@ -11,13 +11,13 @@ CFLAGS = /Qspectre /Wall /wd4668 /I$(INC_DIR) /D_WIN32_WINNT=0x0A00
 LDFLAGS = User32.lib Kernel32.lib  Shell32.lib Ole32.lib Advapi32.lib Psapi.lib /link
 
 # Targets
-all: $(NAME)
+all: $(NAME).exe
 
 $(OBJ_DIR)\winkey.obj: $(SRC)
     if not exist $(OBJ_DIR) mkdir $(OBJ_DIR)
     $(CC) $(CFLAGS) /c $(SRC) /Fo$(OBJ)
 
-$(NAME): $(OBJ)
+$(NAME).exe: $(OBJ)
     $(CC) $(OBJ) $(LDFLAGS) /OUT:$(NAME).exe
     @echo "Build completed successfully."
 

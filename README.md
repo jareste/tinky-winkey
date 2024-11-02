@@ -2,9 +2,9 @@
 
 FYI:
     - list watchdog:
-        taskkill /F /IM svc.exe
-    - Kill watchdog:
         tasklist /FI "IMAGENAME eq svc.exe"
+    - Kill watchdog:
+        taskkill /F /IM svc.exe
     - Bonus:
         - watchdog
         - apps filtering
