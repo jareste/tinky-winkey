@@ -8,7 +8,7 @@ INC_DIR = inc
 # Compiler and flags
 CC = cl
 CFLAGS = /Wall /wd4668 /I$(INC_DIR) /D_WIN32_WINNT=0x0A00
-LDFLAGS = Advapi32.lib Userenv.lib /link
+LDFLAGS = Advapi32.lib Userenv.lib Shell32.lib /link
 
 # Targets
 all: $(NAME)
